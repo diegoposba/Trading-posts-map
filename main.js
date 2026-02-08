@@ -32,20 +32,15 @@ svg.append("rect")
   .attr("height", HEIGHT)
   .attr("fill", "#82C0C9");
 
-// Sphère (contour du globe)
-// svg.append("path")
-//   .datum({ type: "Sphere" })
-//   .attr("d", path)
-//   .attr("fill", "#58b0bc")
-//   .attr("stroke", "#fff")
-//   .attr("stroke-width", 0.5);
+// Groupe unique pour le zoom (land + graticule + flags)
+const gZoom = svg.append("g").attr("class", "zoomable");
 
-// Groupe pour les pays
-const gLand = svg.append("g").attr("class", "land");
+// Pays
+const gLand = gZoom.append("g").attr("class", "land");
 
 // Graticules
 const graticule = d3.geoGraticule();
-svg.append("path")
+const gGraticule = gZoom.append("path")
   .datum(graticule())
   .attr("d", path)
   .attr("fill", "none")
@@ -54,8 +49,8 @@ svg.append("path")
   .attr("stroke-opacity", 0.4)
   .attr("stroke-dasharray", "4 3");
 
-// Groupe pour les drapeaux (au-dessus de tout)
-const gFlags = svg.append("g").attr("class", "flags");
+// Drapeaux (au-dessus de tout)
+const gFlags = gZoom.append("g").attr("class", "flags");
 
 /* =========================
    TOOLTIP
@@ -70,6 +65,7 @@ const tooltip = d3.select("#tooltip");
 let tradingPosts = [];
 let flagConfig = {};
 let currentYear = 1498;
+let currentK = 1;
 const activeEmpires = new Set();
 const panelFlagImages = new Map();
 
@@ -151,6 +147,8 @@ function updateMap(year) {
     .append("g")
     .attr("class", "marker");
 
+  const r = FLAG_SIZE / 2;
+
   enter.each(function (d) {
     const g = d3.select(this);
     const [x, y] = projection([d.lat, d.lon]);
@@ -158,10 +156,13 @@ function updateMap(year) {
 
     g.attr("transform", `translate(${x}, ${y})`);
 
-    const r = FLAG_SIZE / 2;
+    // Sous-groupe avec counter-scale (taille constante à l'écran)
+    const content = g.append("g")
+      .attr("class", "mc")
+      .attr("transform", `scale(${1 / currentK})`);
 
     if (flagFile) {
-      g.append("image")
+      content.append("image")
         .attr("href", flagFile)
         .attr("width", FLAG_SIZE)
         .attr("height", FLAG_SIZE)
@@ -170,14 +171,14 @@ function updateMap(year) {
         .attr("preserveAspectRatio", "xMidYMid slice")
         .style("clip-path", "circle(50%)");
 
-      g.append("circle")
+      content.append("circle")
         .attr("class", "flag-border")
         .attr("r", r)
         .attr("fill", "none")
         .attr("stroke", "#fff")
         .attr("stroke-width", 1.5);
     } else {
-      g.append("circle")
+      content.append("circle")
         .attr("class", "flag-border")
         .attr("r", 4)
         .attr("fill", "#e74c3c")
@@ -186,7 +187,7 @@ function updateMap(year) {
     }
 
     // interactions
-    g.on("mouseover", (event) => {
+    g.on("mouseover", () => {
       tooltip.style("opacity", 1)
         .html(`<strong>${d.name}</strong>
                ${d.altNames ? `<em>${d.altNames}</em><br>` : ""}
@@ -205,12 +206,10 @@ function updateMap(year) {
 
   // update (changer le drapeau si l'empire change d'icône selon l'année)
   markers.each(function (d) {
-    const g = d3.select(this);
-    const flagFile = getFlagFile(d.empire, year);
-
-    const img = g.select("image");
-    if (img.size() && flagFile) {
-      img.attr("href", flagFile);
+    const img = d3.select(this).select("image");
+    if (img.size()) {
+      const flagFile = getFlagFile(d.empire, year);
+      if (flagFile) img.attr("href", flagFile);
     }
   });
 }
@@ -329,32 +328,18 @@ function updateFilterFlags(year) {
    ZOOM & PAN
    ========================= */
 
+const scaleStr = new Map();
+
 const zoom = d3.zoom()
   .scaleExtent([1, 12])
   .on("zoom", (event) => {
     const { transform } = event;
-    gLand.attr("transform", transform);
-    gFlags.attr("transform", transform);
-    // Regénérer le graticule avec le transform
-    svg.select(".land ~ path").attr("transform", transform);
-    // Ajuster la taille des drapeaux
-    const s = FLAG_SIZE / transform.k;
-    gFlags.selectAll("image")
-      .attr("width", s)
-      .attr("height", s)
-      .attr("x", -s / 2)
-      .attr("y", -s / 2);
-    gFlags.selectAll(".flag-border")
-      .attr("r", function () {
-        return d3.select(this.parentNode).select("image").size()
-          ? s / 2
-          : 4 / transform.k;
-      })
-      .attr("stroke-width", function () {
-        return d3.select(this.parentNode).select("image").size()
-          ? 1.5 / transform.k
-          : 1 / transform.k;
-      });
+    currentK = transform.k;
+    // 1 seule mise à jour DOM pour tout le contenu géo
+    gZoom.attr("transform", transform);
+    // 1 attribut par marqueur (counter-scale)
+    const inv = `scale(${1 / transform.k})`;
+    gFlags.selectAll(".mc").attr("transform", inv);
   });
 
 svg.call(zoom);
@@ -372,17 +357,9 @@ window.addEventListener("resize", () => {
 
   projection.scale(w / 3).center([72, 0]).translate([w / 2, h / 2]);
 
-  // Redessiner tout
-  svg.selectAll(".land path").attr("d", path);
-  svg.select("path[d]").filter(function () {
-    return d3.select(this).datum()?.type === "Sphere";
-  }).attr("d", path);
-
-  // Graticule
-  svg.selectAll("path").filter(function () {
-    const d = d3.select(this).datum();
-    return d && d.type === "MultiLineString";
-  }).attr("d", path);
+  // Redessiner les paths géo
+  gLand.selectAll("path").attr("d", path);
+  gGraticule.attr("d", path);
 
   // Repositionner les drapeaux
   gFlags.selectAll(".marker").each(function (d) {

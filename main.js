@@ -30,15 +30,15 @@ const svg = d3.select("#map")
 svg.append("rect")
   .attr("width", WIDTH)
   .attr("height", HEIGHT)
-  .attr("fill", "#58b0bc");
+  .attr("fill", "#82C0C9");
 
 // Sphère (contour du globe)
-svg.append("path")
-  .datum({ type: "Sphere" })
-  .attr("d", path)
-  .attr("fill", "#58b0bc")
-  .attr("stroke", "#fff")
-  .attr("stroke-width", 0.5);
+// svg.append("path")
+//   .datum({ type: "Sphere" })
+//   .attr("d", path)
+//   .attr("fill", "#58b0bc")
+//   .attr("stroke", "#fff")
+//   .attr("stroke-width", 0.5);
 
 // Groupe pour les pays
 const gLand = svg.append("g").attr("class", "land");
@@ -71,6 +71,7 @@ let tradingPosts = [];
 let flagConfig = {};
 let currentYear = 1498;
 const activeEmpires = new Set();
+const panelFlagImages = new Map();
 
 /* =========================
    CHARGEMENT DES DONNÉES
@@ -132,6 +133,7 @@ function getFlagFile(empire, year) {
 
 function updateMap(year) {
   currentYear = year;
+  updateFilterFlags(year);
 
   const visible = tradingPosts.filter(
     d => d.startYear <= year && d.endYear >= year && activeEmpires.has(d.empire)
@@ -277,9 +279,6 @@ function buildFilterPanel(empires) {
   panel.innerHTML = "";
 
   empires.forEach(empire => {
-    const firstRule = flagConfig[empire]?.[0];
-    const flagFile = firstRule ? `flags/${firstRule.icon}` : null;
-
     const label = document.createElement("label");
 
     const cb = document.createElement("input");
@@ -296,18 +295,33 @@ function buildFilterPanel(empires) {
 
     label.appendChild(cb);
 
-    if (flagFile) {
-      const img = document.createElement("img");
-      img.src = flagFile;
-      img.className = "flag-icon";
-      label.appendChild(img);
-    }
+    const img = document.createElement("img");
+    img.className = "flag-icon";
+    label.appendChild(img);
+    panelFlagImages.set(empire, img);
 
     const span = document.createElement("span");
     span.textContent = empire;
     label.appendChild(span);
 
     panel.appendChild(label);
+  });
+
+  updateFilterFlags(currentYear);
+}
+
+function updateFilterFlags(year) {
+  panelFlagImages.forEach((img, empire) => {
+    const flagFile = getFlagFile(empire, year);
+    const firstRule = flagConfig[empire]?.[0];
+    const fallback = firstRule ? `flags/${firstRule.icon}` : null;
+    const src = flagFile || fallback;
+    if (src) {
+      img.src = src;
+      img.style.display = "";
+    } else {
+      img.style.display = "none";
+    }
   });
 }
 

@@ -108,6 +108,8 @@ Promise.all([
   empires.forEach(e => activeEmpires.add(e));
   buildFilterPanel(empires);
 
+  // Précréer tous les marqueurs (invisibles par défaut)
+  buildAllMarkers();
   updateMap(currentYear);
 });
 
@@ -124,39 +126,23 @@ function getFlagFile(empire, year) {
 }
 
 /* =========================
-   MISE À JOUR DE LA CARTE
+   PRÉCRÉATION DES MARQUEURS
    ========================= */
 
-function updateMap(year) {
-  currentYear = year;
-  updateFilterFlags(year);
-
-  const visible = tradingPosts.filter(
-    d => d.startYear <= year && d.endYear >= year && activeEmpires.has(d.empire)
-  );
-
-  // data join
-  const markers = gFlags.selectAll(".marker")
-    .data(visible, d => `${d.name}-${d.empire}`);
-
-  // exit
-  markers.exit().remove();
-
-  // enter
-  const enter = markers.enter()
-    .append("g")
-    .attr("class", "marker");
-
+function buildAllMarkers() {
   const r = FLAG_SIZE / 2;
 
-  enter.each(function (d) {
-    const g = d3.select(this);
+  tradingPosts.forEach(d => {
     const [x, y] = projection([d.lat, d.lon]);
-    const flagFile = getFlagFile(d.empire, year);
+    const firstRule = flagConfig[d.empire]?.[0];
+    const flagFile = firstRule ? `flags/${firstRule.icon}` : null;
 
-    g.attr("transform", `translate(${x}, ${y})`);
+    const g = gFlags.append("g")
+      .attr("class", "marker")
+      .attr("transform", `translate(${x}, ${y})`)
+      .datum(d)
+      .style("display", "none");
 
-    // Sous-groupe avec counter-scale (taille constante à l'écran)
     const content = g.append("g")
       .attr("class", "mc")
       .attr("transform", `scale(${1 / currentK})`);
@@ -203,13 +189,28 @@ function updateMap(year) {
       tooltip.style("opacity", 0);
     });
   });
+}
 
-  // update (changer le drapeau si l'empire change d'icône selon l'année)
-  markers.each(function (d) {
-    const img = d3.select(this).select("image");
-    if (img.size()) {
-      const flagFile = getFlagFile(d.empire, year);
-      if (flagFile) img.attr("href", flagFile);
+/* =========================
+   MISE À JOUR DE LA CARTE
+   ========================= */
+
+function updateMap(year) {
+  currentYear = year;
+  updateFilterFlags(year);
+
+  gFlags.selectAll(".marker").each(function (d) {
+    const visible = d.startYear <= year && d.endYear >= year && activeEmpires.has(d.empire);
+    const el = d3.select(this);
+    el.style("display", visible ? null : "none");
+
+    // Mettre à jour le drapeau si visible
+    if (visible) {
+      const img = el.select("image");
+      if (img.size()) {
+        const flagFile = getFlagFile(d.empire, year);
+        if (flagFile) img.attr("href", flagFile);
+      }
     }
   });
 }
